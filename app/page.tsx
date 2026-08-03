@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const sample = `I am writing to inform you that our team has made the decision to move the product launch date to September 12, 2026. The reason for this change is because we require additional time in order to complete final quality checks. We understand this may cause inconvenience and we sincerely apologize. We will provide another update next week.`;
 
@@ -40,6 +40,12 @@ function Score({ label, value, color }: { label: string; value: number; color?: 
 }
 
 export default function Home() {
+  const [signedIn, setSignedIn] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
   const [source, setSource] = useState(sample);
   const [output, setOutput] = useState("");
   const [channel, setChannel] = useState("Business email");
@@ -52,6 +58,18 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const facts = useMemo(() => extractFacts(source), [source]);
 
+  useEffect(() => { setSignedIn(sessionStorage.getItem("humanizer-session") === "active"); setAuthReady(true); }, []);
+
+  function completeSignIn() { sessionStorage.setItem("humanizer-session", "active"); setSignedIn(true); setAuthBusy(false); }
+  function signInWithGoogle() { setAuthBusy(true); setAuthError(""); window.setTimeout(completeSignIn, 650); }
+  function signInWithEmail(e: FormEvent) {
+    e.preventDefault(); setAuthError("");
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setAuthError("Enter a valid email address.");
+    if (password.length < 6) return setAuthError("Password must be at least 6 characters.");
+    setAuthBusy(true); window.setTimeout(completeSignIn, 650);
+  }
+  function signOut() { sessionStorage.removeItem("humanizer-session"); setSignedIn(false); setPassword(""); }
+
   function runRewrite() {
     if (!source.trim()) return;
     setBusy(true); setOutput("");
@@ -60,10 +78,36 @@ export default function Home() {
 
   async function copy() { if (!output) return; await navigator.clipboard.writeText(output); setCopied(true); setTimeout(() => setCopied(false), 1400); }
 
+  if (!authReady) return <main className="auth-shell"><div className="auth-loading">✦</div></main>;
+  if (!signedIn) return <main className="auth-shell">
+    <section className="auth-story">
+      <div className="auth-brand"><div className="mark">H</div><span>Humanizer</span></div>
+      <div className="auth-message"><p className="eyebrow">NATURAL WRITING ENGINE</p><h1>Write clearly.<br/><span>Still sound like you.</span></h1><p>Shape rough drafts into natural, audience-ready writing—without losing the facts or your voice.</p></div>
+      <div className="auth-proof"><span>✓ Meaning preserved</span><span>✓ Facts protected</span><span>✓ Private by default</span></div>
+      <p className="auth-quote">“It doesn’t flatten your voice.<br/>It helps people hear it.”</p>
+    </section>
+    <section className="auth-panel">
+      <div className="auth-card">
+        <div className="mobile-auth-brand"><div className="mark">H</div><span>Humanizer</span></div>
+        <p className="step">WELCOME BACK</p><h2>Sign in to your studio</h2><p className="auth-note">Your writing space is ready when you are.</p>
+        <button className="google-button" type="button" onClick={signInWithGoogle} disabled={authBusy}><b>G</b>{authBusy ? "Signing you in…" : "Continue with Google"}</button>
+        <div className="divider"><span>or continue with email</span></div>
+        <form onSubmit={signInWithEmail}>
+          <label>Email address<input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)}/></label>
+          <label>Password <a href="#" onClick={e=>e.preventDefault()}>Forgot password?</a><input type="password" autoComplete="current-password" placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)}/></label>
+          {authError && <p className="auth-error" role="alert">{authError}</p>}
+          <button className="email-button" disabled={authBusy}>{authBusy ? "Opening studio…" : "Sign in"}<span>→</span></button>
+        </form>
+        <p className="signup">New to Humanizer? <button onClick={signInWithGoogle}>Create a free account</button></p>
+        <p className="terms">By continuing, you agree to our Terms and Privacy Policy.</p>
+      </div>
+    </section>
+  </main>;
+
   return <main>
     <header>
       <div className="brand"><div className="mark">H</div><span>Humanizer</span><em>studio</em></div>
-      <div className="header-meta"><span className="privacy"><i /> Private by default</span><button className="icon-btn" aria-label="Help">?</button><div className="avatar">U</div></div>
+      <div className="header-meta"><span className="privacy"><i /> Private by default</span><button className="signout" onClick={signOut}>Sign out</button><button className="icon-btn" aria-label="Help">?</button><div className="avatar">U</div></div>
     </header>
 
     <section className="intro">
