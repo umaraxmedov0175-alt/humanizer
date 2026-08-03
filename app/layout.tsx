@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import "./ai.css";
 
 const sans = DM_Sans({ variable: "--font-sans", subsets: ["latin"] });
 const serif = Instrument_Serif({ variable: "--font-serif", subsets: ["latin"], weight: "400" });

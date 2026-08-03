@@ -56,6 +56,8 @@ export default function Home() {
   const [tab, setTab] = useState<"report" | "changes">("report");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [engine, setEngine] = useState<"ai" | "local" | null>(null);
+  const [rewriteNotice, setRewriteNotice] = useState("");
   const facts = useMemo(() => extractFacts(source), [source]);
 
   useEffect(() => { setSignedIn(sessionStorage.getItem("humanizer-session") === "active"); setAuthReady(true); }, []);
@@ -70,10 +72,18 @@ export default function Home() {
   }
   function signOut() { sessionStorage.removeItem("humanizer-session"); setSignedIn(false); setPassword(""); }
 
-  function runRewrite() {
+  async function runRewrite() {
     if (!source.trim()) return;
-    setBusy(true); setOutput("");
-    window.setTimeout(() => { setOutput(rewriteText(source, directness, warmth, level, channel)); setBusy(false); }, 650);
+    setBusy(true); setOutput(""); setRewriteNotice(""); setEngine(null);
+    try {
+      const response = await fetch("/api/rewrite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: source, channel, level, strength, warmth, directness }) });
+      const data = await response.json() as { text?: string; error?: string };
+      if (!response.ok || !data.text) throw new Error(data.error || "Rewrite failed");
+      setOutput(data.text); setEngine("ai");
+    } catch {
+      setOutput(rewriteText(source, directness, warmth, level, channel)); setEngine("local");
+      setRewriteNotice("AI is not configured yet, so this rewrite used the built-in local engine.");
+    } finally { setBusy(false); }
   }
 
   async function copy() { if (!output) return; await navigator.clipboard.writeText(output); setCopied(true); setTimeout(() => setCopied(false), 1400); }
@@ -129,7 +139,7 @@ export default function Home() {
       <div className="editor-area">
         <div className="panes">
           <article className="pane original"><div className="pane-head"><span>ORIGINAL</span><span>{source.split(/\s+/).filter(Boolean).length} words</span></div><textarea aria-label="Original text" value={source} onChange={e=>setSource(e.target.value)} placeholder="Paste your draft here…"/><button className="clear" onClick={()=>setSource("")}>Clear</button></article>
-          <article className="pane result"><div className="pane-head"><span>REWRITE</span>{output && <button onClick={copy}>{copied ? "Copied" : "Copy"}</button>}</div>{busy ? <div className="thinking"><i/><i/><i/><p>Finding the natural rhythm…</p></div> : output ? <div className="output" contentEditable suppressContentEditableWarning>{output}</div> : <div className="empty"><div className="spark">✦</div><p>Your rewrite will appear here</p><small>Meaning preserved. Voice refined.</small></div>}</article>
+          <article className="pane result"><div className="pane-head"><span>REWRITE {engine && <em className={`engine ${engine}`}>{engine === "ai" ? "AI" : "LOCAL"}</em>}</span>{output && <button onClick={copy}>{copied ? "Copied" : "Copy"}</button>}</div>{busy ? <div className="thinking"><i/><i/><i/><p>Finding the natural rhythm…</p></div> : output ? <><div className="output" contentEditable suppressContentEditableWarning>{output}</div>{rewriteNotice && <p className="rewrite-notice">{rewriteNotice}</p>}</> : <div className="empty"><div className="spark">✦</div><p>Your rewrite will appear here</p><small>Meaning preserved. Voice refined.</small></div>}</article>
         </div>
         <button className="rewrite" disabled={!source.trim() || busy} onClick={runRewrite}><span>✦</span>{busy ? "Rewriting…" : "Rewrite naturally"}<kbd>Ctrl ↵</kbd></button>
       </div>
