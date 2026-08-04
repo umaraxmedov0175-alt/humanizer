@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import { DM_Sans, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import "./ai.css";
 
-const sans = DM_Sans({ variable: "--font-sans", subsets: ["latin"] });
-const serif = Instrument_Serif({ variable: "--font-serif", subsets: ["latin"], weight: "400" });
+const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
 
 export const metadata: Metadata = {
+  metadataBase: new URL(vercelHost ? `https://${vercelHost}` : "http://localhost:3000"),
   title: "Humanizer — Natural Writing Studio",
   description: "Rewrite with clarity and character while preserving your meaning, facts, and intent.",
   icons: { icon: "/favicon.svg" },
@@ -19,5 +18,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{children: React.ReactNode}>) {
-  return <html lang="en"><body className={`${sans.variable} ${serif.variable}`}>{children}</body></html>;
+  return <html lang="en"><body>{children}</body></html>;
 }
