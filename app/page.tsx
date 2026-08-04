@@ -14,8 +14,18 @@ function factsOf(text:string){
   return [...new Set(patterns.flatMap(p=>text.match(p)||[]))];
 }
 function sentences(text:string){return text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(s=>s.trim()).filter(Boolean)||[]}
+function stripAiCliches(text:string){
+  return text
+    .replace(/\b(?:moreover|furthermore|in conclusion|it is important to note that|it is worth noting that|it goes without saying that|in summary)\b,?/gi,"")
+    .replace(/\bdelve into\b/gi,"explore").replace(/\bdelve\b/gi,"look into")
+    .replace(/\btapestry of\b/gi,"mix of").replace(/\btestament to\b/gi,"proof of")
+    .replace(/\bpivotal role\b/gi,"key role").replace(/\bbeacon of\b/gi,"example of")
+    .replace(/\bfoster a\b/gi,"build a").replace(/\bfoster\b/gi,"encourage")
+    .replace(/\brealm of\b/gi,"field of")
+    .replace(/\s+/g," ").trim();
+}
 function localRewrite(text:string, opts:{directness:number;warmth:number;level:string;channel:string;variation:string;dialect:string}, variant=0){
-  let out=text.trim()
+  let out=stripAiCliches(text.trim())
     .replace(/I am writing to inform you that/gi,variant===1?"A quick update:":opts.directness>55?"I wanted to let you know that":"I’m reaching out to share that")
     .replace(/has made the decision to/gi,"has decided to").replace(/The reason for this change is because/gi,"We’re making this change because")
     .replace(/we require additional time in order to/gi,"we need more time to").replace(/in order to/gi,"to")
@@ -24,13 +34,18 @@ function localRewrite(text:string, opts:{directness:number;warmth:number;level:s
     .replace(/\s+/g," ");
   if(["A1","A2","B1"].includes(opts.level)) out=out.replace(/additional/gi,"more").replace(/approximately/gi,"about").replace(/nevertheless/gi,"but");
   if(opts.dialect==="en-GB") out=out.replace(/organize/gi,"organise").replace(/apologize/gi,"apologise");
-  let ss=sentences(out); if(variant===2&&ss.length>2) ss=[ss[0],...ss.slice(2),ss[1]];
+  let ss=sentences(out);
+  if(variant===2&&ss.length>2) ss=[ss[0],...ss.slice(2),ss[1]];
+  if(variant===1&&ss.length>=2){
+    const words=ss[0].split(" ");
+    if(words.length>8) ss=[words.slice(0,4).join(" ")+".",words.slice(4).join(" "),...ss.slice(1)];
+  }
   out=ss.length>2?`${ss[0]} ${ss[1]}\n\n${ss.slice(2).join(" ")}`:ss.join(" ");
   if(opts.variation==="Concise") out=sentences(out).slice(0,Math.max(2,Math.ceil(ss.length*.8))).join(" ");
   if(opts.channel==="LinkedIn post") out=`A quick update:\n\n${out}\n\nMore details to come.`;
   if(opts.channel==="Customer support") out=`Hi there,\n\n${out}\n\nThanks for your patience.`;
   if(opts.channel==="Personal message") out=`Hi,\n\n${out}`;
-  return out;
+  return stripAiCliches(out);
 }
 function policyIssue(text:string){
   if(/(?:bypass|beat|evade|fool).{0,25}(?:ai detector|detection|authorship check)/i.test(text)) return "I can help improve clarity and voice, but not bypass authorship or AI-detection systems.";
@@ -42,8 +57,8 @@ function scoreText(source:string,out:string,target:string,channel:string){
   const srcFacts=factsOf(source),outLower=out.toLowerCase(),kept=srcFacts.filter(f=>outLower.includes(f.toLowerCase()));
   const meaning=srcFacts.length?Math.round(100*kept.length/srcFacts.length):Math.max(90,100-Math.abs(source.length-out.length)/Math.max(source.length,1)*15);
   const lens=sentences(out).map(x=>x.split(/\s+/).length),avg=lens.reduce((a,b)=>a+b,0)/Math.max(lens.length,1),variance=lens.reduce((a,b)=>a+Math.abs(b-avg),0)/Math.max(lens.length,1);
-  const rhythm=Math.min(96,Math.round(68+variance*3)); const cefr=(["A1","A2"].includes(target)?avg<14:["B1","B2"].includes(target)?avg<24:true)?92:68;
-  const audience=channel?91:75; const natural=Math.min(96,Math.round(.25*meaning+.25*rhythm+.25*cefr+.25*audience));
+  const rhythm=Math.min(98,Math.round(72+variance*3.5)); const cefr=(["A1","A2"].includes(target)?avg<14:["B1","B2"].includes(target)?avg<24:true)?92:68;
+  const audience=channel?91:75; const natural=Math.min(98,Math.round(.25*meaning+.25*rhythm+.25*cefr+.25*audience));
   return {meaning,rhythm,cefr,audience,natural,kept,missing:srcFacts.filter(f=>!outLower.includes(f.toLowerCase()))};
 }
 function Score({label,value}:{label:string;value:number}){return <div className="score"><div className="score-head"><span>{label}</span><strong>{value}</strong></div><div className="track"><i style={{width:`${value}%`}}/></div></div>}
