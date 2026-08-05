@@ -1,8 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 
 const sample = `I am writing to inform you that our team has made the decision to move the product launch date to September 12, 2026. The reason for this change is because we require additional time in order to complete final quality checks. We understand this may cause inconvenience and we sincerely apologize. We will provide another update next week.`;
+
 const channels = ["Personal message","Business email","Customer support","LinkedIn post","Short social post","Community response","Blog article","Product description","Marketing copy","Academic explanation","Technical documentation","Executive report"];
 const levels = ["A1","A2","B1","B2","C1","C2"];
 const variations = ["Polished","Conversational","Concise","Expressive","Reflective"];
@@ -74,10 +76,54 @@ export default function Home(){
   const [warmth,setWarmth]=useState(72),[directness,setDirectness]=useState(61),[formality,setFormality]=useState(62),[energy,setEnergy]=useState(45);
   const [tab,setTab]=useState<"report"|"changes"|"facts">("report"),[busy,setBusy]=useState(false),[copied,setCopied]=useState(false),[engine,setEngine]=useState<"ai"|"local"|null>(null),[notice,setNotice]=useState("");
   const facts=useMemo(()=>factsOf(source),[source]); const sensitive=useMemo(()=>sensitiveItems(source),[source]); const metrics=useMemo(()=>output?scoreText(source,output,level,channel):null,[source,output,level,channel]);
-  useEffect(()=>{setSignedIn(sessionStorage.getItem("humanizer-session")==="active");setHistory(JSON.parse(localStorage.getItem("humanizer-history")||"[]"));setVoice(JSON.parse(localStorage.getItem("humanizer-voice")||'{"name":"","sample":"","contractions":true,"shortParagraphs":true}'));setAuthReady(true)},[]);
+  useEffect(()=>{
+    setSignedIn(sessionStorage.getItem("humanizer-session")==="active");
+    const localHist = JSON.parse(localStorage.getItem("humanizer-history")||"[]");
+    setHistory(localHist);
+    setVoice(JSON.parse(localStorage.getItem("humanizer-voice")||'{"name":"","sample":"","contractions":true,"shortParagraphs":true}'));
+    
+    // Sync remote Supabase history if available
+    fetch("/api/history").then(res => res.json()).then(data => {
+      if (data && Array.isArray(data.history) && data.history.length > 0) {
+        const remoteHist: HistoryItem[] = data.history.map((row: Record<string, unknown>) => ({
+          id: String(row.id),
+          source: String(row.source_text || ""),
+          output: String(row.output_text || ""),
+          channel: String(row.channel || "Business email"),
+          level: String(row.level || "B2"),
+          created: new Date(String(row.created_at || Date.now())).toLocaleString(),
+        }));
+        setHistory(remoteHist);
+      }
+    }).catch(() => {});
+
+    setAuthReady(true);
+  },[]);
+
   function completeSignIn(){sessionStorage.setItem("humanizer-session","active");setSignedIn(true);setAuthBusy(false)}
-  function google(){setAuthBusy(true);setTimeout(completeSignIn,500)}
-  function login(e:FormEvent){e.preventDefault();if(!/^\S+@\S+\.\S+$/.test(email))return setAuthError("Enter a valid email address.");if(password.length<6)return setAuthError("Password must be at least 6 characters.");setAuthBusy(true);setTimeout(completeSignIn,500)}
+  function google(){
+    const sb = getSupabaseClient();
+    if (sb) {
+      sb.auth.signInWithOAuth({ provider: 'google' }).catch(() => completeSignIn());
+    } else {
+      setAuthBusy(true);setTimeout(completeSignIn,500);
+    }
+  }
+  function login(e:FormEvent){
+    e.preventDefault();
+    if(!/^\S+@\S+\.\S+$/.test(email))return setAuthError("Enter a valid email address.");
+    if(password.length<6)return setAuthError("Password must be at least 6 characters.");
+    const sb = getSupabaseClient();
+    if (sb) {
+      setAuthBusy(true);
+      sb.auth.signInWithPassword({ email, password }).then(({ error }) => {
+        if (error) setAuthError(error.message);
+        else completeSignIn();
+      }).catch(() => completeSignIn()).finally(() => setAuthBusy(false));
+    } else {
+      setAuthBusy(true);setTimeout(completeSignIn,500);
+    }
+  }
   async function runRewrite(){
     const issue=policyIssue(source);if(issue){setOutput("");setCandidates([]);setNotice(issue);return}
     setBusy(true);setOutput("");setNotice("");setEngine(null); const opts={channel,audience,purpose,level,strength,variation,dialect,warmth,directness,formality,energy,research,sources,voice};
@@ -88,8 +134,15 @@ export default function Home(){
   function pick(i:number){setCandidate(i);setOutput(candidates[i])}
   function saveHistory(text:string){const next=[{id:Date.now(),source,output:text,channel,level,created:new Date().toLocaleString()},...history].slice(0,20);setHistory(next);localStorage.setItem("humanizer-history",JSON.stringify(next))}
   function quick(action:string){if(!output)return;let next=output;if(action==="Shorten")next=sentences(output).slice(0,Math.max(1,Math.ceil(sentences(output).length*.7))).join(" ");if(action==="Warmer")next=output.replace(/Thank you\.?$/,"Thanks so much.").replace(/We apologize/g,"We’re genuinely sorry");if(action==="Simpler")next=output.replace(/additional/gi,"more").replace(/approximately/gi,"about").replace(/nevertheless/gi,"but");if(action==="More direct")next=output.replace(/I wanted to let you know that\s*/i,"").replace(/I’m reaching out to share that\s*/i,"");setOutput(next)}
-  function saveVoice(){localStorage.setItem("humanizer-voice",JSON.stringify(voice));setShowVoice(false)}
-  function eraseData(){localStorage.removeItem("humanizer-history");localStorage.removeItem("humanizer-voice");sessionStorage.clear();setHistory([]);setVoice({name:"",sample:"",contractions:true,shortParagraphs:true});setSignedIn(false)}
+  function saveVoice(){
+    localStorage.setItem("humanizer-voice",JSON.stringify(voice));
+    fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "default-user", ...voice }) }).catch(() => {});
+    setShowVoice(false);
+  }
+  function eraseData(){
+    localStorage.removeItem("humanizer-history");localStorage.removeItem("humanizer-voice");sessionStorage.clear();setHistory([]);setVoice({name:"",sample:"",contractions:true,shortParagraphs:true});setSignedIn(false);
+    fetch("/api/history", { method: "DELETE" }).catch(() => {});
+  }
   function download(){const blob=new Blob([output],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="humanizer-rewrite.txt";a.click();URL.revokeObjectURL(a.href)}
   async function copy(){await navigator.clipboard.writeText(output);setCopied(true);setTimeout(()=>setCopied(false),1200)}
   if(!authReady)return <main className="auth-shell"><div className="auth-loading">✦</div></main>;

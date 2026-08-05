@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -20,6 +21,8 @@ export async function POST(request: NextRequest) {
     const energy = Number(body.energy || 50);
     const sources = String(body.sources || "").slice(0, 12000);
     const voice = body.voice && typeof body.voice === "object" ? body.voice as Record<string, unknown> : {};
+    const userId = typeof body.userId === "string" ? body.userId : null;
+
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -36,6 +39,20 @@ export async function POST(request: NextRequest) {
     const data = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
     const rewritten = data.output_text || data.output?.flatMap(x => x.content || []).map(x => x.text || "").join("").trim();
     if (!rewritten) throw new Error("The model returned an empty response.");
+
+    // Asynchronously log to Supabase if configured
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      supabase.from("rewrites").insert({
+        user_id: userId,
+        source_text: text,
+        output_text: rewritten,
+        channel,
+        level,
+        engine: "ai",
+      }).then(() => {}).catch((err) => console.error("Supabase rewrite save error:", err));
+    }
+
     return NextResponse.json({ text: rewritten, engine: "ai" });
   } catch (error) {
     console.error("Rewrite failed", error instanceof Error ? error.message : "Unknown error");
