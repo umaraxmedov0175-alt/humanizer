@@ -202,9 +202,8 @@ Channel: ${channel}. Audience: ${audience}. Purpose: ${purpose}. CEFR Level: ${l
     try {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        supabase
-          .from("rewrites")
-          .insert({
+        Promise.resolve(
+          supabase.from("rewrites").insert({
             user_id: userId,
             source_text: text,
             output_text: rewritten,
@@ -212,8 +211,7 @@ Channel: ${channel}. Audience: ${audience}. Purpose: ${purpose}. CEFR Level: ${l
             level,
             engine: engineUsed,
           })
-          .then(() => {})
-          .catch((dbErr) => console.warn("Supabase background save warning:", dbErr));
+        ).catch((dbErr: unknown) => console.warn("Supabase background save warning:", dbErr));
       }
     } catch {}
 

@@ -139,9 +139,8 @@ Return ONLY the rewritten text.`;
     try {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        supabase
-          .from("rewrite_requests")
-          .insert({
+        Promise.resolve(
+          supabase.from("rewrite_requests").insert({
             user_id: "default-user",
             client_request_id: idempotencyKey,
             input_hash: String(text.length),
@@ -152,8 +151,7 @@ Return ONLY the rewritten text.`;
             privacy_mode: "ephemeral",
             status: statusMode,
           })
-          .then(() => {})
-          .catch(() => {});
+        ).catch(() => {});
       }
     } catch {}
 
