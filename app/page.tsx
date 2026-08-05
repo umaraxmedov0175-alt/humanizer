@@ -16,8 +16,20 @@ function factsOf(text:string){
   return [...new Set(patterns.flatMap(p=>text.match(p)||[]))];
 }
 function sentences(text:string){return text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(s=>s.trim()).filter(Boolean)||[]}
+function protectCodeSpans(text:string){
+  const codeBlocks:string[]=[];
+  const placeholderText=text.replace(/(```[\s\S]*?```|`[^`\n]+`)/g,(match)=>{
+    codeBlocks.push(match);
+    return `__CODE_BLOCK_${codeBlocks.length-1}__`;
+  });
+  return {text:placeholderText,codeBlocks};
+}
+function restoreCodeSpans(text:string,codeBlocks:string[]){
+  return text.replace(/__CODE_BLOCK_(\d+)__/g,(_,index)=>codeBlocks[Number(index)]||"");
+}
 function stripAiCliches(text:string){
-  return text
+  const {text:protectedText,codeBlocks}=protectCodeSpans(text);
+  const cleaned=protectedText
     .replace(/\b(?:moreover|furthermore|in conclusion|it is important to note that|it is worth noting that|it goes without saying that|in summary)\b,?/gi,"")
     .replace(/\bdelve into\b/gi,"explore").replace(/\bdelve\b/gi,"look into")
     .replace(/\btapestry of\b/gi,"mix of").replace(/\btestament to\b/gi,"proof of")
@@ -25,6 +37,7 @@ function stripAiCliches(text:string){
     .replace(/\bfoster a\b/gi,"build a").replace(/\bfoster\b/gi,"encourage")
     .replace(/\brealm of\b/gi,"field of")
     .replace(/\s+/g," ").trim();
+  return restoreCodeSpans(cleaned,codeBlocks);
 }
 function localRewrite(text:string, opts:{directness:number;warmth:number;level:string;channel:string;variation:string;dialect:string}, variant=0){
   let out=stripAiCliches(text.trim())
@@ -82,8 +95,14 @@ export default function Home(){
     setHistory(localHist);
     setVoice(JSON.parse(localStorage.getItem("humanizer-voice")||'{"name":"","sample":"","contractions":true,"shortParagraphs":true}'));
     
-    // Sync remote Supabase history if available
-    fetch("/api/history").then(res => res.json()).then(data => {
+    let devId = localStorage.getItem("humanizer-device-id");
+    if (!devId) {
+      devId = "dev_" + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+      localStorage.setItem("humanizer-device-id", devId);
+    }
+
+    // Sync remote Supabase history for this device
+    fetch(`/api/history?userId=${encodeURIComponent(devId)}`).then(res => res.json()).then(data => {
       if (data && Array.isArray(data.history) && data.history.length > 0) {
         const remoteHist: HistoryItem[] = data.history.map((row: Record<string, unknown>) => ({
           id: String(row.id),

@@ -46,8 +46,29 @@ function serverLocalRewrite(text: string, channel: string, level: string, dialec
   return stripAiCliches(out);
 }
 
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string, maxRequests = 25, windowMs = 60000): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+  if (!record || now > record.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (record.count >= maxRequests) {
+    return false;
+  }
+  record.count += 1;
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "127.0.0.1";
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json({ error: "Too many requests. Please wait a minute before trying again." }, { status: 429 });
+    }
+
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const text = String(body.text || "").trim();
     if (!text) {
