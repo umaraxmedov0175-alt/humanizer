@@ -39,24 +39,43 @@ function stripAiCliches(text:string){
     .replace(/\s+/g," ").trim();
   return restoreCodeSpans(cleaned,codeBlocks);
 }
-function localRewrite(text:string, opts:{directness:number;warmth:number;level:string;channel:string;variation:string;dialect:string}, variant=0){
-  let out=stripAiCliches(text.trim())
-    .replace(/I am writing to inform you that/gi,variant===1?"A quick update:":opts.directness>55?"I wanted to let you know that":"I’m reaching out to share that")
-    .replace(/has made the decision to/gi,"has decided to").replace(/The reason for this change is because/gi,"We’re making this change because")
-    .replace(/we require additional time in order to/gi,"we need more time to").replace(/in order to/gi,"to")
-    .replace(/due to the fact that/gi,"because").replace(/at this point in time/gi,"now").replace(/utilize/gi,"use").replace(/commence/gi,"begin")
-    .replace(/We understand this may cause inconvenience and we sincerely apologize\.?/gi,opts.warmth>55?"We know this may be inconvenient, and we’re sorry for the disruption.":"We apologize for any inconvenience.")
-    .replace(/\s+/g," ");
-  if(["A1","A2","B1"].includes(opts.level)) out=out.replace(/additional/gi,"more").replace(/approximately/gi,"about").replace(/nevertheless/gi,"but");
-  if(opts.dialect==="en-GB") out=out.replace(/organize/gi,"organise").replace(/apologize/gi,"apologise");
-  let ss=sentences(out);
-  if(variant===2&&ss.length>2) ss=[ss[0],...ss.slice(2),ss[1]];
-  if(variant===1&&ss.length>=2){
-    const words=ss[0].split(" ");
-    if(words.length>8) ss=[words.slice(0,4).join(" ")+".",words.slice(4).join(" "),...ss.slice(1)];
+function capitalizeSentence(s:string){
+  const trimmed=s.trim();
+  if(!trimmed) return "";
+  return trimmed.charAt(0).toUpperCase()+trimmed.slice(1);
+}
+function enforceDialectClient(text:string,dialect:string){
+  if(dialect==="en-GB"){
+    return text.replace(/\borganize\b/gi,"organise").replace(/\borganization\b/gi,"organisation").replace(/\bapologize\b/gi,"apologise").replace(/\bcenter\b/gi,"centre").replace(/\btraveled\b/gi,"travelled");
   }
-  out=ss.length>2?`${ss[0]} ${ss[1]}\n\n${ss.slice(2).join(" ")}`:ss.join(" ");
-  if(opts.variation==="Concise") out=sentences(out).slice(0,Math.max(2,Math.ceil(ss.length*.8))).join(" ");
+  return text.replace(/\borganise\b/gi,"organize").replace(/\borganisation\b/gi,"organization").replace(/\bapologise\b/gi,"apologize").replace(/\bcentre\b/gi,"center").replace(/\btravelled\b/gi,"traveled");
+}
+function localRewrite(text:string, opts:{directness:number;warmth:number;level:string;channel:string;variation:string;dialect:string}, variant=0){
+  const paragraphs=text.split(/\n\s*\n/).filter(Boolean);
+  const rewrittenParagraphs=paragraphs.map(p=>{
+    let out=stripAiCliches(p.trim())
+      .replace(/I am writing to inform you that/gi,variant===1?"A quick update:":opts.directness>55?"I wanted to let you know that":"I’m reaching out to share that")
+      .replace(/has made the decision to/gi,"has decided to").replace(/The reason for this change is because/gi,"We’re making this change because")
+      .replace(/we require additional time in order to/gi,"we need more time to").replace(/in order to/gi,"to")
+      .replace(/due to the fact that/gi,"because").replace(/at this point in time/gi,"now").replace(/utilize/gi,"use").replace(/commence/gi,"begin")
+      .replace(/We understand this may cause inconvenience and we sincerely apologize\.?/gi,opts.warmth>55?"We know this may be inconvenient, and we’re sorry for the disruption.":"We apologize for any inconvenience.")
+      .replace(/\s+/g," ");
+    if(["A1","A2","B1"].includes(opts.level)) out=out.replace(/additional/gi,"more").replace(/approximately/gi,"about").replace(/nevertheless/gi,"but");
+    out=enforceDialectClient(out,opts.dialect);
+    let ss=sentences(out);
+    if(variant===2&&ss.length>2) ss=[ss[0],...ss.slice(2),ss[1]];
+    if(variant===1&&ss.length>=2){
+      const words=ss[0].split(" ");
+      if(words.length>8) {
+        const part1=capitalizeSentence(words.slice(0,4).join(" ")+".");
+        const part2=capitalizeSentence(words.slice(4).join(" "));
+        ss=[part1,part2,...ss.slice(1)];
+      }
+    }
+    return ss.map(capitalizeSentence).join(" ");
+  });
+  let out=rewrittenParagraphs.join("\n\n");
+  if(opts.variation==="Concise") out=sentences(out).slice(0,Math.max(2,Math.ceil(sentences(out).length*.8))).map(capitalizeSentence).join(" ");
   if(opts.channel==="LinkedIn post") out=`A quick update:\n\n${out}\n\nMore details to come.`;
   if(opts.channel==="Customer support") out=`Hi there,\n\n${out}\n\nThanks for your patience.`;
   if(opts.channel==="Personal message") out=`Hi,\n\n${out}`;
